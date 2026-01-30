@@ -95,23 +95,37 @@ Install from [smithery.ai](https://smithery.ai) - search for "gemini-image-mcp".
 Generate a photorealistic sunset over mountains with purple sky
 ```
 
-![Sunset example](docs/photorealistic_sunset_mountains_purple_sky.png)
+![Sunset example](docs/example_generate_sunset.png)
 
 ```
 Create a British Shorthair silver tabby kitten playing with a ball of yarn
 ```
 
-![Kitten example](docs/silver_tabby_kitten_playing_yarn.png)
+![Kitten example](docs/example_generate_kitten.png)
 
 ### Transform Images
 
-```
-Add a cozy fireplace in the background
-```
+**Before:**
 
-```
-Add a small butterfly landing on the cat's nose
-```
+![Original sunset](docs/example_generate_sunset.png)
+
+**Prompt:** `Add beautiful vibrant aurora borealis (northern lights) dancing across the sky with green, purple, and blue colors`
+
+**After:**
+
+![Sunset with aurora](docs/example_transform_aurora_after.png)
+
+---
+
+**Before:**
+
+![Original kitten with yarn](docs/example_generate_kitten.png)
+
+**Prompt:** `Add soft natural sunlight streaming through a window, creating beautiful warm light rays and gentle shadows`
+
+**After:**
+
+![Kitten with sunbeams](docs/example_transform_sunlight_after.png)
 
 ## Available Tools
 
