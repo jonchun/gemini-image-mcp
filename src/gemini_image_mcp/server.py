@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import binascii
+import contextlib
 import logging
 import os
 import sys
@@ -40,17 +41,17 @@ async def invoke_gemini_api(
     model: str | None = None,
     config: types.GenerateContentConfig | None = None,
     text_only: bool = False,
-) -> str | bytes:
+) -> str | tuple[bytes, str]:
     """Call the Gemini API and return text or image data.
 
     Args:
         contents: Content to send (text and/or images).
         model: Gemini model name. Defaults to GEMINI_MODEL.
         config: Optional generation config.
-        text_only: If True, return text response; otherwise return image bytes.
+        text_only: If True, return text response; otherwise return image bytes with mime type.
 
     Returns:
-        Text string if text_only=True, otherwise raw image bytes.
+        Text string if text_only=True, otherwise tuple of (raw image bytes, mime_type).
 
     Raises:
         ValueError: If API key is missing or response lacks expected content.
@@ -84,7 +85,9 @@ async def invoke_gemini_api(
     if response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
         for part in response.candidates[0].content.parts:
             if part.inline_data is not None and part.inline_data.data is not None:
-                return part.inline_data.data
+                mime_type = part.inline_data.mime_type or "image/png"
+                logger.info(f"Image received with mime_type: {mime_type}")
+                return part.inline_data.data, mime_type
 
     raise ValueError("No image data found in Gemini response")
 
@@ -97,7 +100,7 @@ async def invoke_gemini_api_with_progress(
     text_only: bool = False,
     progress_start: float = 0.2,
     progress_end: float = 0.8,
-) -> str | bytes:
+) -> str | tuple[bytes, str]:
     """Call Gemini API while sending periodic progress updates.
 
     Args:
@@ -105,12 +108,12 @@ async def invoke_gemini_api_with_progress(
         ctx: Context for progress reporting.
         model: Gemini model name. Defaults to GEMINI_MODEL.
         config: Optional generation config.
-        text_only: If True, return text response; otherwise return image bytes.
+        text_only: If True, return text response; otherwise return image bytes with mime type.
         progress_start: Starting progress value (0.0-1.0).
         progress_end: Ending progress value (0.0-1.0).
 
     Returns:
-        Text string if text_only=True, otherwise raw image bytes.
+        Text string if text_only=True, otherwise tuple of (raw image bytes, mime_type).
     """
 
     async def send_periodic_progress() -> None:
@@ -136,10 +139,8 @@ async def invoke_gemini_api_with_progress(
         # Cancel heartbeat when done
         if heartbeat_task:
             heartbeat_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await heartbeat_task
-            except asyncio.CancelledError:
-                pass
 
 
 async def generate_filename_from_prompt(prompt: str) -> str:
@@ -199,7 +200,7 @@ async def translate_to_english(text: str) -> str:
 async def generate_image(
     contents: list[Any],
     model: str | None = None,
-) -> bytes:
+) -> tuple[bytes, str]:
     """Generate an image with Gemini.
 
     Args:
@@ -207,14 +208,14 @@ async def generate_image(
         model: Optional Gemini model override.
 
     Returns:
-        Raw image bytes.
+        Tuple of (raw image bytes, mime_type).
     """
     gemini_response = await invoke_gemini_api(
         contents,
         model=model,
         config=types.GenerateContentConfig(response_modalities=["Text", "Image"]),
     )
-    assert isinstance(gemini_response, bytes), "Expected bytes response"
+    assert isinstance(gemini_response, tuple), "Expected tuple response"
     return gemini_response
 
 
@@ -222,7 +223,7 @@ async def generate_image_with_progress(
     contents: list[Any],
     ctx: Context | None,
     model: str | None = None,
-) -> bytes:
+) -> tuple[bytes, str]:
     """Generate an image with Gemini, with progress reporting.
 
     Args:
@@ -231,7 +232,7 @@ async def generate_image_with_progress(
         model: Optional Gemini model override.
 
     Returns:
-        Raw image bytes.
+        Tuple of (raw image bytes, mime_type).
     """
     # Send periodic progress during Gemini API call (20% -> 80%)
     gemini_response = await invoke_gemini_api_with_progress(
@@ -242,7 +243,7 @@ async def generate_image_with_progress(
         progress_start=0.2,
         progress_end=0.8,
     )
-    assert isinstance(gemini_response, bytes), "Expected bytes response"
+    assert isinstance(gemini_response, tuple), "Expected tuple response"
     return gemini_response
 
 
@@ -250,19 +251,21 @@ async def transform_image(
     source_image: PIL.Image.Image,
     optimized_edit_prompt: str,
     ctx: Context | None = None,
-) -> bytes:
+    model: str | None = None,
+) -> tuple[bytes, str]:
     """Transform an image with Gemini.
 
     Args:
         source_image: PIL Image to transform.
         optimized_edit_prompt: Translated/optimized transformation prompt.
         ctx: Optional context for progress reporting.
+        model: Optional Gemini model override.
 
     Returns:
-        Raw image bytes.
+        Tuple of (raw image bytes, mime_type).
     """
     edit_instructions = build_transformation_prompt(optimized_edit_prompt)
-    return await generate_image_with_progress([edit_instructions, source_image], ctx)
+    return await generate_image_with_progress([edit_instructions, source_image], ctx, model=model)
 
 
 async def decode_base64_image(encoded_image: str) -> tuple[PIL.Image.Image, str]:
@@ -302,7 +305,7 @@ async def decode_base64_image(encoded_image: str) -> tuple[PIL.Image.Image, str]
 
 @mcp.tool()
 async def generate_image_from_text(
-    prompt: str, output_dir: str | None = None, ctx: Context | None = None
+    prompt: str, output_dir: str | None = None, model: str | None = None, ctx: Context | None = None
 ) -> list[TextContent | ImageContent]:
     """Generate an image from a text prompt using Gemini.
 
@@ -310,6 +313,7 @@ async def generate_image_from_text(
         prompt: Text description of the desired image.
         output_dir: Optional directory to save the generated image.
                    If not provided, the image is only returned in the response (not saved to disk).
+        model: Optional Gemini model name. If not provided, uses GEMINI_MODEL environment variable.
         ctx: Optional context for progress reporting.
 
     Returns:
@@ -330,7 +334,7 @@ async def generate_image_from_text(
     contents = build_generation_prompt(translated_prompt)
 
     # Generate with progress reporting (20% -> 80%)
-    image_bytes = await generate_image_with_progress([contents], ctx)
+    image_bytes, mime_type = await generate_image_with_progress([contents], ctx, model=model)
 
     # Build response
     result: list[TextContent | ImageContent] = []
@@ -350,15 +354,15 @@ async def generate_image_from_text(
     if ctx:
         await ctx.report_progress(1.0, message="Image generation complete!")
 
-    # Always include the image content
-    result.append(ImageContent(type="image", data=base64.b64encode(image_bytes).decode("utf-8"), mimeType="image/png"))
+    # Always include the image content with actual mime type from Gemini
+    result.append(ImageContent(type="image", data=base64.b64encode(image_bytes).decode("utf-8"), mimeType=mime_type))
 
     return result
 
 
 @mcp.tool()
 async def transform_image_from_encoded(
-    encoded_image: str, prompt: str, output_dir: str | None = None, ctx: Context | None = None
+    encoded_image: str, prompt: str, output_dir: str | None = None, model: str | None = None, ctx: Context | None = None
 ) -> list[TextContent | ImageContent]:
     """Transform a base64-encoded image using Gemini.
 
@@ -367,6 +371,7 @@ async def transform_image_from_encoded(
         prompt: Text description of desired transformation.
         output_dir: Optional directory to save the generated image.
                    If not provided, the image is only returned in the response (not saved to disk).
+        model: Optional Gemini model name. If not provided, uses GEMINI_MODEL environment variable.
         ctx: Optional context for progress reporting.
 
     Returns:
@@ -393,7 +398,7 @@ async def transform_image_from_encoded(
         await ctx.report_progress(0.15, message="Preparing image transformation...")
 
     # Transform with progress reporting (20% -> 80%)
-    image_bytes = await transform_image(source_image, translated_prompt, ctx)
+    image_bytes, mime_type = await transform_image(source_image, translated_prompt, ctx, model=model)
 
     # Build response
     result: list[TextContent | ImageContent] = []
@@ -413,15 +418,19 @@ async def transform_image_from_encoded(
     if ctx:
         await ctx.report_progress(1.0, message="Image transformation complete!")
 
-    # Always include the image content
-    result.append(ImageContent(type="image", data=base64.b64encode(image_bytes).decode("utf-8"), mimeType="image/png"))
+    # Always include the image content with actual mime type from Gemini
+    result.append(ImageContent(type="image", data=base64.b64encode(image_bytes).decode("utf-8"), mimeType=mime_type))
 
     return result
 
 
 @mcp.tool()
 async def transform_image_from_file(
-    image_file_path: str, prompt: str, output_dir: str | None = None, ctx: Context | None = None
+    image_file_path: str,
+    prompt: str,
+    output_dir: str | None = None,
+    model: str | None = None,
+    ctx: Context | None = None,
 ) -> list[TextContent | ImageContent]:
     """Transform an image file using Gemini.
 
@@ -430,6 +439,7 @@ async def transform_image_from_file(
         prompt: Text description of desired transformation.
         output_dir: Optional directory to save the generated image.
                    If not provided, the image is only returned in the response (not saved to disk).
+        model: Optional Gemini model name. If not provided, uses GEMINI_MODEL environment variable.
         ctx: Optional context for progress reporting.
 
     Returns:
@@ -466,7 +476,7 @@ async def transform_image_from_file(
         await ctx.report_progress(0.15, message="Preparing image transformation...")
 
     # Transform with progress reporting (20% -> 80%)
-    image_bytes = await transform_image(source_image, translated_prompt, ctx)
+    image_bytes, mime_type = await transform_image(source_image, translated_prompt, ctx, model=model)
 
     # Build response
     result: list[TextContent | ImageContent] = []
@@ -486,8 +496,8 @@ async def transform_image_from_file(
     if ctx:
         await ctx.report_progress(1.0, message="Image transformation complete!")
 
-    # Always include the image content
-    result.append(ImageContent(type="image", data=base64.b64encode(image_bytes).decode("utf-8"), mimeType="image/png"))
+    # Always include the image content with actual mime type from Gemini
+    result.append(ImageContent(type="image", data=base64.b64encode(image_bytes).decode("utf-8"), mimeType=mime_type))
 
     return result
 

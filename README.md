@@ -125,6 +125,7 @@ Creates an image from a text description.
 
 - `prompt` (required): Text description of the image
 - `output_dir` (optional): Directory to save the image
+- `model` (optional): Gemini model to use (defaults to `GEMINI_MODEL` environment variable)
 
 **Returns:** Path to the saved image file
 
@@ -137,6 +138,7 @@ Transforms an existing image based on a text prompt.
 - `image_file_path` (required): Path to the source image
 - `prompt` (required): Description of the transformation
 - `output_dir` (optional): Directory to save the image
+- `model` (optional): Gemini model to use (defaults to `GEMINI_MODEL` environment variable)
 
 **Returns:** Path to the transformed image file
 
@@ -149,6 +151,7 @@ Transforms a base64-encoded image.
 - `encoded_image` (required): Base64 data URL (`data:image/[format];base64,[data]`)
 - `prompt` (required): Description of the transformation
 - `output_dir` (optional): Directory to save the image
+- `model` (optional): Gemini model to use (defaults to `GEMINI_MODEL` environment variable)
 
 **Returns:** Path to the transformed image file
 
