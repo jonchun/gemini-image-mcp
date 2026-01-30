@@ -24,7 +24,7 @@ dependencies = [
 ]
 
 [project.scripts]
-gemini-image-mcp-server = "gemini_image_mcp:main"
+gemini-image-mcp = "gemini_image_mcp:main"
 
 [build-system]
 requires = ["hatchling"]

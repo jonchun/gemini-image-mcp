@@ -30,12 +30,12 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -e .
 ```
 
-### 3. Configure Claude Desktop
+### 3. Configure Your MCP Client
 
-Add to your `claude_desktop_config.json`:
+<details>
+<summary>Claude Desktop</summary>
 
-**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`  
-**Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+Add to `claude_desktop_config.json` (macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`, Windows: `%APPDATA%\Claude\claude_desktop_config.json`):
 
 ```json
 {
@@ -46,26 +46,54 @@ Add to your `claude_desktop_config.json`:
         "--directory",
         "/ABSOLUTE/PATH/TO/gemini-image-mcp",
         "run",
-        "gemini-image-mcp-server"
+        "gemini-image-mcp"
       ],
       "env": {
-        "GEMINI_API_KEY": "your-gemini-api-key",
-        "DEFAULT_OUTPUT_IMAGE_PATH": "/ABSOLUTE/PATH/TO/images"
+        "GEMINI_API_KEY": "your-api-key",
+        "DEFAULT_OUTPUT_IMAGE_PATH": "/path/to/images"
       }
     }
   }
 }
 ```
 
-Replace:
+Restart Claude Desktop.
 
-- `/ABSOLUTE/PATH/TO/gemini-image-mcp` with where you cloned this repo
-- `your-gemini-api-key` with your actual Gemini API key
-- `/ABSOLUTE/PATH/TO/images` with where you want images saved by default (optional - defaults to current working directory)
+</details>
 
-### 4. Restart Claude Desktop
+<details>
+<summary>OpenCode</summary>
 
-Restart Claude Desktop to load the server.
+Add to your OpenCode MCP settings:
+
+```json
+{
+  "gemini-image-mcp": {
+    "command": "uv",
+    "args": [
+      "--directory",
+      "/ABSOLUTE/PATH/TO/gemini-image-mcp",
+      "run",
+      "gemini-image-mcp"
+    ],
+    "env": {
+      "GEMINI_API_KEY": "your-api-key",
+      "DEFAULT_OUTPUT_IMAGE_PATH": "/path/to/images"
+    }
+  }
+}
+```
+
+Restart OpenCode.
+
+</details>
+
+<details>
+<summary>Smithery</summary>
+
+Install directly from Smithery's MCP registry at [smithery.ai](https://smithery.ai) by searching for "gemini-image-mcp".
+
+</details>
 
 ## Usage
 
@@ -73,17 +101,17 @@ Ask Claude to generate or transform images:
 
 **Generate images:**
 
-- "Generate an image of a sunset over mountains"
-- "Create a 3D rendered flying pig with a top hat over a futuristic city"
+- "Generate an image of a British Shorthair silver tabby cat sitting on a windowsill"
+- "Create a photorealistic British Shorthair silver tabby kitten playing with a ball of yarn"
 
 **Transform images:**
 
-- "Add snow to this landscape"
-- "Add a cute baby whale flying alongside the pig"
+- "Add a cozy fireplace in the background"
+- "Add a small butterfly landing on the cat's nose"
 
 ## Features
 
-- **Text-to-image generation** using Gemini 3 Pro Image Preview
+- **Text-to-image generation** using Gemini Models (Nano Banana)
 - **Image-to-image transformation** from text prompts
 - **Automatic filename generation** based on prompts
 - **High-resolution output** with strict text exclusion
