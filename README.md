@@ -1,41 +1,39 @@
+![Cover](docs/gemini_mcp_server_cover.png)
+
 # Gemini Image Generator MCP Server
 
-Generate and transform images using Google's Gemini AI model through the Model Context Protocol (MCP).
+Generate and transform images using Google's Gemini AI through the Model Context Protocol (MCP).
 
-## Getting Started
+[![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
-### 1. Get a Gemini API Key
+## Features
 
-1. Visit [Google AI Studio API Keys page](https://aistudio.google.com/apikey)
-2. Sign in with your Google account
-3. Click "Create API Key"
-4. Copy your API key
+- **Text-to-Image Generation** - Create images from natural language prompts
+- **Image Transformation** - Modify existing images with text descriptions
+- **Automatic Filename Generation** - Smart naming based on prompts
+- **Multi-Language Support** - Automatic prompt translation to English
 
-### 2. Install
+## Installation
 
-Clone the repository and install dependencies:
+Get a free API key from [Google AI Studio](https://aistudio.google.com/apikey).
 
 ```bash
-git clone https://github.com/your-username/gemini-image-mcp.git
+git clone https://github.com/jonchun/gemini-image-mcp.git
 cd gemini-image-mcp
 
 # Using uv (recommended)
 uv venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
 uv pip install -e .
-
-# Or using pip
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-pip install -e .
 ```
 
-### 3. Configure Your MCP Client
+### Configuration
 
 <details>
-<summary>Claude Desktop</summary>
+<summary><b>Claude Desktop</b></summary>
 
-Add to `claude_desktop_config.json` (macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`, Windows: `%APPDATA%\Claude\claude_desktop_config.json`):
+Add to `claude_desktop_config.json`:
 
 ```json
 {
@@ -49,7 +47,7 @@ Add to `claude_desktop_config.json` (macOS: `~/Library/Application Support/Claud
         "gemini-image-mcp"
       ],
       "env": {
-        "GEMINI_API_KEY": "your-api-key",
+        "GEMINI_API_KEY": "your-api-key-here",
         "DEFAULT_OUTPUT_IMAGE_PATH": "/path/to/images"
       }
     }
@@ -57,14 +55,10 @@ Add to `claude_desktop_config.json` (macOS: `~/Library/Application Support/Claud
 }
 ```
 
-Restart Claude Desktop.
-
 </details>
 
 <details>
-<summary>OpenCode</summary>
-
-Add to your OpenCode MCP settings:
+<summary><b>OpenCode</b></summary>
 
 ```json
 {
@@ -77,137 +71,104 @@ Add to your OpenCode MCP settings:
       "gemini-image-mcp"
     ],
     "env": {
-      "GEMINI_API_KEY": "your-api-key",
+      "GEMINI_API_KEY": "your-api-key-here",
       "DEFAULT_OUTPUT_IMAGE_PATH": "/path/to/images"
     }
   }
 }
 ```
 
-Restart OpenCode.
-
 </details>
 
 <details>
-<summary>Smithery</summary>
+<summary><b>Smithery</b></summary>
 
-Install directly from Smithery's MCP registry at [smithery.ai](https://smithery.ai) by searching for "gemini-image-mcp".
+Install from [smithery.ai](https://smithery.ai) - search for "gemini-image-mcp".
 
 </details>
 
 ## Usage
 
-Ask Claude to generate or transform images:
+### Generate Images
 
-**Generate images:**
+```
+Generate a photorealistic sunset over mountains with purple sky
+```
 
-- "Generate an image of a British Shorthair silver tabby cat sitting on a windowsill"
-- "Create a photorealistic British Shorthair silver tabby kitten playing with a ball of yarn"
+![Sunset example](docs/photorealistic_sunset_mountains_purple_sky.png)
 
-**Transform images:**
+```
+Create a British Shorthair silver tabby kitten playing with a ball of yarn
+```
 
-- "Add a cozy fireplace in the background"
-- "Add a small butterfly landing on the cat's nose"
+![Kitten example](docs/silver_tabby_kitten_playing_yarn.png)
 
-## Features
+### Transform Images
 
-- **Text-to-image generation** using Gemini Models (Nano Banana)
-- **Image-to-image transformation** from text prompts
-- **Automatic filename generation** based on prompts
-- **High-resolution output** with strict text exclusion
-- **Multiple input formats** - file paths or base64-encoded images
-- **Flexible output directory** - specify per-request or use default
+```
+Add a cozy fireplace in the background
+```
+
+```
+Add a small butterfly landing on the cat's nose
+```
 
 ## Available Tools
 
 ### `generate_image_from_text`
 
-Creates a new image from a text description.
-
-```python
-generate_image_from_text(prompt: str, output_dir: str | None = None) -> str
-```
+Creates an image from a text description.
 
 **Parameters:**
 
-- `prompt`: Text description of the image to generate
-- `output_dir` (optional): Directory to save the generated image. If not provided, uses `DEFAULT_OUTPUT_IMAGE_PATH` environment variable, or current working directory if not set.
+- `prompt` (required): Text description of the image
+- `output_dir` (optional): Directory to save the image
 
 **Returns:** Path to the saved image file
-
-**Example:**
-
-```
-"Generate a photorealistic sunset over mountains with purple sky"
-```
 
 ### `transform_image_from_file`
 
 Transforms an existing image based on a text prompt.
 
-```python
-transform_image_from_file(image_file_path: str, prompt: str, output_dir: str | None = None) -> str
-```
-
 **Parameters:**
 
-- `image_file_path`: Path to the image file
-- `prompt`: Description of how to transform the image
-- `output_dir` (optional): Directory to save the generated image. If not provided, uses `DEFAULT_OUTPUT_IMAGE_PATH` environment variable, or current working directory if not set.
+- `image_file_path` (required): Path to the source image
+- `prompt` (required): Description of the transformation
+- `output_dir` (optional): Directory to save the image
 
 **Returns:** Path to the transformed image file
-
-**Example:**
-
-```
-transform_image_from_file("/path/to/image.png", "Add a rainbow in the sky")
-```
 
 ### `transform_image_from_encoded`
 
-Transforms an image from base64-encoded data.
-
-```python
-transform_image_from_encoded(encoded_image: str, prompt: str, output_dir: str | None = None) -> str
-```
+Transforms a base64-encoded image.
 
 **Parameters:**
 
-- `encoded_image`: Base64 encoded image with format header (`data:image/[format];base64,[data]`)
-- `prompt`: Description of how to transform the image
-- `output_dir` (optional): Directory to save the generated image. If not provided, uses `DEFAULT_OUTPUT_IMAGE_PATH` environment variable, or current working directory if not set.
+- `encoded_image` (required): Base64 data URL (`data:image/[format];base64,[data]`)
+- `prompt` (required): Description of the transformation
+- `output_dir` (optional): Directory to save the image
 
 **Returns:** Path to the transformed image file
 
-**Note:** This method may be slower due to base64 encoding overhead.
-
 ## Configuration
 
-Environment variables:
-
-- `GEMINI_API_KEY` (required): Your Gemini API key
-- `DEFAULT_OUTPUT_IMAGE_PATH` (optional): Default directory to save generated images (default: current working directory)
-- `GEMINI_MODEL` (optional): Model to use (default: `gemini-2.5-flash-image`)
-- `GEMINI_BASE_URL` (optional): API base URL (default: `https://generativelanguage.googleapis.com`)
-
-You can also specify the output directory per-request by passing the `output_dir` parameter to any of the image generation tools.
+| Variable                    | Required | Default                                     | Description           |
+| --------------------------- | -------- | ------------------------------------------- | --------------------- |
+| `GEMINI_API_KEY`            | Yes      | -                                           | Your Gemini API key   |
+| `DEFAULT_OUTPUT_IMAGE_PATH` | No       | Current directory                           | Default save location |
+| `GEMINI_MODEL`              | No       | `gemini-2.5-flash-image`                    | Model to use          |
+| `GEMINI_BASE_URL`           | No       | `https://generativelanguage.googleapis.com` | API base URL          |
 
 ## Development
 
-Test the server using FastMCP development mode:
+Test the server locally:
 
 ```bash
-fastmcp dev server.py
+fastmcp dev src/gemini_image_mcp/server.py
 ```
 
-This starts a local server at http://localhost:5173/ with the MCP Inspector for testing tools directly.
-
-## Requirements
-
-- Python 3.11+
-- Google Gemini API key
-- MCP-compatible client (Claude Desktop, Cursor, etc.)
+Opens MCP Inspector at `http://localhost:5173/`
 
 ## License
 
-MIT License
+MIT
