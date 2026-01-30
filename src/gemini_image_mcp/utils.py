@@ -30,8 +30,31 @@ def is_valid_base64_image(base64_string: str) -> bool:
         return False
 
 
-async def save_image_to_disk(image_data: bytes, filename: str, output_dir: str | None = None) -> str:
-    """Save raw image bytes to disk as a PNG file.
+def get_extension_from_mime_type(mime_type: str) -> str:
+    """Get file extension from MIME type.
+
+    Args:
+        mime_type: MIME type string (e.g., "image/png", "image/jpeg").
+
+    Returns:
+        File extension including the dot (e.g., ".png", ".jpg").
+    """
+    mime_to_ext = {
+        "image/png": ".png",
+        "image/jpeg": ".jpg",
+        "image/jpg": ".jpg",
+        "image/gif": ".gif",
+        "image/webp": ".webp",
+        "image/bmp": ".bmp",
+        "image/tiff": ".tiff",
+    }
+    return mime_to_ext.get(mime_type.lower(), ".png")
+
+
+async def save_image_to_disk(
+    image_data: bytes, filename: str, output_dir: str | None = None, mime_type: str = "image/png"
+) -> str:
+    """Save raw image bytes to disk with the correct extension based on mime type.
 
     Args:
         image_data: Raw image bytes.
@@ -39,9 +62,11 @@ async def save_image_to_disk(image_data: bytes, filename: str, output_dir: str |
         output_dir: Optional directory to save the image.
                    If not provided, uses DEFAULT_OUTPUT_IMAGE_PATH environment variable.
                    If that's also not set, uses current working directory.
+        mime_type: MIME type of the image (e.g., "image/png", "image/jpeg").
+                   Used to determine the file extension.
 
     Returns:
-        Absolute path to the saved PNG file.
+        Absolute path to the saved image file.
 
     Raises:
         Exception: If the image cannot be opened or saved.
@@ -53,11 +78,14 @@ async def save_image_to_disk(image_data: bytes, filename: str, output_dir: str |
         # Ensure directory exists
         target_dir.mkdir(parents=True, exist_ok=True)
 
+        # Determine file extension from mime type
+        extension = get_extension_from_mime_type(mime_type)
+
         # Save file
         image = PIL.Image.open(io.BytesIO(image_data))
-        image_path = target_dir / f"{filename}.png"
+        image_path = target_dir / f"{filename}{extension}"
         image.save(image_path)
-        logger.info(f"Image saved to {image_path}")
+        logger.info(f"Image saved to {image_path} (mime_type: {mime_type})")
         return str(image_path)
     except Exception as e:
         logger.error(f"Error saving image: {e!s}")

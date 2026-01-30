@@ -347,7 +347,7 @@ async def generate_image_from_text(
 
         if ctx:
             await ctx.report_progress(0.95, message="Saving image to disk...")
-        saved_path = await save_image_to_disk(image_bytes, filename, output_dir)
+        saved_path = await save_image_to_disk(image_bytes, filename, output_dir, mime_type)
         result.append(TextContent(type="text", text=f"Image saved to: {saved_path}"))
 
     # Progress: Complete
@@ -411,7 +411,7 @@ async def transform_image_from_encoded(
 
         if ctx:
             await ctx.report_progress(0.95, message="Saving image to disk...")
-        saved_path = await save_image_to_disk(image_bytes, filename, output_dir)
+        saved_path = await save_image_to_disk(image_bytes, filename, output_dir, mime_type)
         result.append(TextContent(type="text", text=f"Image saved to: {saved_path}"))
 
     # Progress: Complete
@@ -489,7 +489,7 @@ async def transform_image_from_file(
 
         if ctx:
             await ctx.report_progress(0.95, message="Saving image to disk...")
-        saved_path = await save_image_to_disk(image_bytes, filename, output_dir)
+        saved_path = await save_image_to_disk(image_bytes, filename, output_dir, mime_type)
         result.append(TextContent(type="text", text=f"Image saved to: {saved_path}"))
 
     # Progress: Complete
