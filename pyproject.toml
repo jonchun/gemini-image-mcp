@@ -1,0 +1,41 @@
+[project]
+name = "gemini-image-mcp"
+version = "0.1.0"
+description = ""
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "Jonathan Chun", email = "git@jonathanchun.com" }]
+keywords = [
+    "mcp",
+    "gemini",
+    "image-generation",
+    "ai",
+    "text-to-image",
+    "image-transformation",
+    "google-ai",
+    "model-context-protocol",
+]
+license = { text = "MIT" }
+dependencies = [
+    "fastmcp>=2.14.4",
+    "google>=3.0.0",
+    "google-genai>=1.60.0",
+    "pillow>=12.1.0",
+]
+
+[project.scripts]
+gemini-image-mcp-server = "gemini_image_mcp:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+dev-dependencies = ["ruff>=0.7.3", "ty>=0.0.14"]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "N", "UP", "ANN", "B", "A", "C4", "SIM", "ARG", "PTH", "PL", "RUF"]
+ignore = ["ANN401", "PLR0913", "PLR2004", "B008"]
