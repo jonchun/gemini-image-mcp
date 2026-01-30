@@ -105,25 +105,13 @@ Create a British Shorthair silver tabby kitten playing with a ball of yarn
 
 ### Transform Images
 
-**Before:**
-
-![Original sunset](docs/example_generate_sunset.png)
-
 **Prompt:** `Add beautiful vibrant aurora borealis (northern lights) dancing across the sky with green, purple, and blue colors`
-
-**After:**
 
 ![Sunset with aurora](docs/example_transform_aurora_after.png)
 
 ---
 
-**Before:**
-
-![Original kitten with yarn](docs/example_generate_kitten.png)
-
 **Prompt:** `Add soft natural sunlight streaming through a window, creating beautiful warm light rays and gentle shadows`
-
-**After:**
 
 ![Kitten with sunbeams](docs/example_transform_sunlight_after.png)
 
