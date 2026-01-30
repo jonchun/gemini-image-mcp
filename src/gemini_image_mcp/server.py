@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import binascii
 import logging
@@ -11,7 +12,8 @@ from typing import Any
 import PIL.Image
 from google import genai
 from google.genai import types
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import Context, FastMCP
+from mcp.types import ImageContent, TextContent
 
 from .prompts import (
     build_generation_prompt,
@@ -30,9 +32,7 @@ logger = logging.getLogger(__name__)
 mcp = FastMCP("gemini-image-mcp")
 
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash-image")
-GEMINI_BASE_URL = os.environ.get(
-    "GEMINI_BASE_URL", "https://generativelanguage.googleapis.com"
-)
+GEMINI_BASE_URL = os.environ.get("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com")
 
 
 async def invoke_gemini_api(
@@ -66,9 +66,7 @@ async def invoke_gemini_api(
     client = genai.Client(api_key=api_key, http_options=http_options)
 
     try:
-        response = client.models.generate_content(
-            model=model, contents=contents, config=config
-        )
+        response = client.models.generate_content(model=model, contents=contents, config=config)
     except Exception as e:
         logger.error(f"Error calling Gemini API: {e!s}")
         raise
@@ -76,27 +74,72 @@ async def invoke_gemini_api(
     logger.info(f"Response received from Gemini API using model {model}")
 
     if text_only:
-        if (
-            not response.candidates
-            or not response.candidates[0].content
-            or not response.candidates[0].content.parts
-        ):
+        if not response.candidates or not response.candidates[0].content or not response.candidates[0].content.parts:
             raise ValueError("No text content found in Gemini response")
         text = response.candidates[0].content.parts[0].text
         if text is None:
             raise ValueError("No text content found in Gemini response")
         return text.strip()
 
-    if (
-        response.candidates
-        and response.candidates[0].content
-        and response.candidates[0].content.parts
-    ):
+    if response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
         for part in response.candidates[0].content.parts:
             if part.inline_data is not None and part.inline_data.data is not None:
                 return part.inline_data.data
 
     raise ValueError("No image data found in Gemini response")
+
+
+async def invoke_gemini_api_with_progress(
+    contents: list[Any],
+    ctx: Context | None,
+    model: str | None = None,
+    config: types.GenerateContentConfig | None = None,
+    text_only: bool = False,
+    progress_start: float = 0.2,
+    progress_end: float = 0.8,
+) -> str | bytes:
+    """Call Gemini API while sending periodic progress updates.
+
+    Args:
+        contents: Content to send (text and/or images).
+        ctx: Context for progress reporting.
+        model: Gemini model name. Defaults to GEMINI_MODEL.
+        config: Optional generation config.
+        text_only: If True, return text response; otherwise return image bytes.
+        progress_start: Starting progress value (0.0-1.0).
+        progress_end: Ending progress value (0.0-1.0).
+
+    Returns:
+        Text string if text_only=True, otherwise raw image bytes.
+    """
+
+    async def send_periodic_progress() -> None:
+        """Background task to send progress updates every 10 seconds."""
+        progress = progress_start
+        increment = (progress_end - progress_start) / 12  # ~2 min max / 10 sec intervals
+        while True:
+            await asyncio.sleep(10)
+            progress = min(progress + increment, progress_end)
+            if ctx:
+                await ctx.report_progress(progress, message="Generating image...")
+
+    # Start heartbeat task if context is provided
+    heartbeat_task = None
+    if ctx:
+        heartbeat_task = asyncio.create_task(send_periodic_progress())
+
+    try:
+        # Make the actual API call
+        result = await invoke_gemini_api(contents, model, config, text_only)
+        return result
+    finally:
+        # Cancel heartbeat when done
+        if heartbeat_task:
+            heartbeat_task.cancel()
+            try:
+                await heartbeat_task
+            except asyncio.CancelledError:
+                pass
 
 
 async def generate_filename_from_prompt(prompt: str) -> str:
@@ -153,24 +196,18 @@ async def translate_to_english(text: str) -> str:
         return text
 
 
-async def generate_and_save_image(
+async def generate_image(
     contents: list[Any],
-    prompt: str,
     model: str | None = None,
-    output_dir: str | None = None,
-) -> tuple[bytes, str]:
-    """Generate an image with Gemini and save it to disk.
+) -> bytes:
+    """Generate an image with Gemini.
 
     Args:
         contents: Content list for Gemini (prompt and optional source image).
-        prompt: Original prompt for filename generation.
         model: Optional Gemini model override.
-        output_dir: Optional directory to save the image.
-                   If not provided, uses DEFAULT_OUTPUT_IMAGE_PATH environment variable.
-                   If that's also not set, uses current working directory.
 
     Returns:
-        Tuple of (image bytes, saved file path).
+        Raw image bytes.
     """
     gemini_response = await invoke_gemini_api(
         contents,
@@ -178,36 +215,54 @@ async def generate_and_save_image(
         config=types.GenerateContentConfig(response_modalities=["Text", "Image"]),
     )
     assert isinstance(gemini_response, bytes), "Expected bytes response"
-
-    filename = await generate_filename_from_prompt(prompt)
-    saved_image_path = await save_image_to_disk(gemini_response, filename, output_dir)
-
-    return gemini_response, saved_image_path
+    return gemini_response
 
 
-async def transform_and_save_image(
+async def generate_image_with_progress(
+    contents: list[Any],
+    ctx: Context | None,
+    model: str | None = None,
+) -> bytes:
+    """Generate an image with Gemini, with progress reporting.
+
+    Args:
+        contents: Content list for Gemini (prompt and optional source image).
+        ctx: Context for progress reporting.
+        model: Optional Gemini model override.
+
+    Returns:
+        Raw image bytes.
+    """
+    # Send periodic progress during Gemini API call (20% -> 80%)
+    gemini_response = await invoke_gemini_api_with_progress(
+        contents,
+        ctx,
+        model=model,
+        config=types.GenerateContentConfig(response_modalities=["Text", "Image"]),
+        progress_start=0.2,
+        progress_end=0.8,
+    )
+    assert isinstance(gemini_response, bytes), "Expected bytes response"
+    return gemini_response
+
+
+async def transform_image(
     source_image: PIL.Image.Image,
     optimized_edit_prompt: str,
-    original_edit_prompt: str,
-    output_dir: str | None = None,
-) -> tuple[bytes, str]:
-    """Transform an image with Gemini and save the result.
+    ctx: Context | None = None,
+) -> bytes:
+    """Transform an image with Gemini.
 
     Args:
         source_image: PIL Image to transform.
         optimized_edit_prompt: Translated/optimized transformation prompt.
-        original_edit_prompt: Original user prompt for filename.
-        output_dir: Optional directory to save the image.
-                   If not provided, uses DEFAULT_OUTPUT_IMAGE_PATH environment variable.
-                   If that's also not set, uses current working directory.
+        ctx: Optional context for progress reporting.
 
     Returns:
-        Tuple of (image bytes, saved file path).
+        Raw image bytes.
     """
     edit_instructions = build_transformation_prompt(optimized_edit_prompt)
-    return await generate_and_save_image(
-        [edit_instructions, source_image], original_edit_prompt, output_dir=output_dir
-    )
+    return await generate_image_with_progress([edit_instructions, source_image], ctx)
 
 
 async def decode_base64_image(encoded_image: str) -> tuple[PIL.Image.Image, str]:
@@ -223,9 +278,7 @@ async def decode_base64_image(encoded_image: str) -> tuple[PIL.Image.Image, str]
         ValueError: If format is invalid or image cannot be decoded.
     """
     if not encoded_image.startswith("data:image/"):
-        raise ValueError(
-            "Invalid image format. Expected data:image/[format];base64,[data]"
-        )
+        raise ValueError("Invalid image format. Expected data:image/[format];base64,[data]")
 
     try:
         image_format, image_data = encoded_image.split(";base64,")
@@ -236,107 +289,207 @@ async def decode_base64_image(encoded_image: str) -> tuple[PIL.Image.Image, str]
         return source_image, image_format
     except binascii.Error as e:
         logger.error(f"Error: Invalid base64 encoding: {e!s}")
-        raise ValueError(
-            "Invalid base64 encoding. Please provide a valid base64 encoded image."
-        ) from e
+        raise ValueError("Invalid base64 encoding. Please provide a valid base64 encoded image.") from e
     except ValueError as e:
         logger.error(f"Error: Invalid image data format: {e!s}")
         raise ValueError(
-            "Invalid image data format. "
-            "Image must be in format 'data:image/[format];base64,[data]'"
+            "Invalid image data format. Image must be in format 'data:image/[format];base64,[data]'"
         ) from e
     except PIL.UnidentifiedImageError as e:
         logger.error("Error: Could not identify image format")
-        raise ValueError(
-            "Could not identify image format. "
-            "Supported formats include PNG, JPEG, GIF, WebP."
-        ) from e
+        raise ValueError("Could not identify image format. Supported formats include PNG, JPEG, GIF, WebP.") from e
 
 
 @mcp.tool()
 async def generate_image_from_text(
-    prompt: str, output_dir: str | None = None
-) -> tuple[bytes, str]:
+    prompt: str, output_dir: str | None = None, ctx: Context | None = None
+) -> list[TextContent | ImageContent]:
     """Generate an image from a text prompt using Gemini.
 
     Args:
         prompt: Text description of the desired image.
         output_dir: Optional directory to save the generated image.
-                   If not provided, uses DEFAULT_OUTPUT_IMAGE_PATH environment variable.
-                   If that's also not set, uses current working directory.
+                   If not provided, the image is only returned in the response (not saved to disk).
+        ctx: Optional context for progress reporting.
 
     Returns:
-        Tuple of (image bytes, saved file path).
+        List containing ImageContent with the generated image, and optionally TextContent with file path if saved.
     """
+    # Progress: Starting
+    if ctx:
+        await ctx.report_progress(0.05, message="Starting image generation...")
+
+    # Progress: Translating prompt
+    if ctx:
+        await ctx.report_progress(0.1, message="Translating prompt...")
     translated_prompt = await translate_to_english(prompt)
+
+    # Progress: Preparing generation
+    if ctx:
+        await ctx.report_progress(0.15, message="Preparing image generation...")
     contents = build_generation_prompt(translated_prompt)
-    return await generate_and_save_image([contents], prompt, output_dir=output_dir)
+
+    # Generate with progress reporting (20% -> 80%)
+    image_bytes = await generate_image_with_progress([contents], ctx)
+
+    # Build response
+    result: list[TextContent | ImageContent] = []
+
+    # Only save to disk if output_dir is explicitly provided
+    if output_dir is not None:
+        if ctx:
+            await ctx.report_progress(0.85, message="Generating filename...")
+        filename = await generate_filename_from_prompt(prompt)
+
+        if ctx:
+            await ctx.report_progress(0.95, message="Saving image to disk...")
+        saved_path = await save_image_to_disk(image_bytes, filename, output_dir)
+        result.append(TextContent(type="text", text=f"Image saved to: {saved_path}"))
+
+    # Progress: Complete
+    if ctx:
+        await ctx.report_progress(1.0, message="Image generation complete!")
+
+    # Always include the image content
+    result.append(ImageContent(type="image", data=base64.b64encode(image_bytes).decode("utf-8"), mimeType="image/png"))
+
+    return result
 
 
 @mcp.tool()
 async def transform_image_from_encoded(
-    encoded_image: str, prompt: str, output_dir: str | None = None
-) -> tuple[bytes, str]:
+    encoded_image: str, prompt: str, output_dir: str | None = None, ctx: Context | None = None
+) -> list[TextContent | ImageContent]:
     """Transform a base64-encoded image using Gemini.
 
     Args:
         encoded_image: Base64 data URL (data:image/[format];base64,[data]).
         prompt: Text description of desired transformation.
         output_dir: Optional directory to save the generated image.
-                   If not provided, uses DEFAULT_OUTPUT_IMAGE_PATH environment variable.
-                   If that's also not set, uses current working directory.
+                   If not provided, the image is only returned in the response (not saved to disk).
+        ctx: Optional context for progress reporting.
 
     Returns:
-        Tuple of (image bytes, saved file path).
+        List containing ImageContent with the transformed image, and optionally TextContent with file path if saved.
     """
-    logger.info(
-        f"Processing transform_image_from_encoded request with prompt: {prompt}"
-    )
+    logger.info(f"Processing transform_image_from_encoded request with prompt: {prompt}")
 
+    # Progress: Starting
+    if ctx:
+        await ctx.report_progress(0.05, message="Starting image transformation...")
+
+    # Progress: Decoding image
+    if ctx:
+        await ctx.report_progress(0.08, message="Decoding image...")
     source_image, _ = await decode_base64_image(encoded_image)
+
+    # Progress: Translating prompt
+    if ctx:
+        await ctx.report_progress(0.1, message="Translating prompt...")
     translated_prompt = await translate_to_english(prompt)
-    return await transform_and_save_image(
-        source_image, translated_prompt, prompt, output_dir
-    )
+
+    # Progress: Preparing transformation
+    if ctx:
+        await ctx.report_progress(0.15, message="Preparing image transformation...")
+
+    # Transform with progress reporting (20% -> 80%)
+    image_bytes = await transform_image(source_image, translated_prompt, ctx)
+
+    # Build response
+    result: list[TextContent | ImageContent] = []
+
+    # Only save to disk if output_dir is explicitly provided
+    if output_dir is not None:
+        if ctx:
+            await ctx.report_progress(0.85, message="Generating filename...")
+        filename = await generate_filename_from_prompt(prompt)
+
+        if ctx:
+            await ctx.report_progress(0.95, message="Saving image to disk...")
+        saved_path = await save_image_to_disk(image_bytes, filename, output_dir)
+        result.append(TextContent(type="text", text=f"Image saved to: {saved_path}"))
+
+    # Progress: Complete
+    if ctx:
+        await ctx.report_progress(1.0, message="Image transformation complete!")
+
+    # Always include the image content
+    result.append(ImageContent(type="image", data=base64.b64encode(image_bytes).decode("utf-8"), mimeType="image/png"))
+
+    return result
 
 
 @mcp.tool()
 async def transform_image_from_file(
-    image_file_path: str, prompt: str, output_dir: str | None = None
-) -> tuple[bytes, str]:
+    image_file_path: str, prompt: str, output_dir: str | None = None, ctx: Context | None = None
+) -> list[TextContent | ImageContent]:
     """Transform an image file using Gemini.
 
     Args:
         image_file_path: Path to the source image file.
         prompt: Text description of desired transformation.
         output_dir: Optional directory to save the generated image.
-                   If not provided, uses DEFAULT_OUTPUT_IMAGE_PATH environment variable.
-                   If that's also not set, uses current working directory.
+                   If not provided, the image is only returned in the response (not saved to disk).
+        ctx: Optional context for progress reporting.
 
     Returns:
-        Tuple of (image bytes, saved file path).
+        List containing ImageContent with the transformed image, and optionally TextContent with file path if saved.
     """
     logger.info(f"Processing transform_image_from_file request with prompt: {prompt}")
     logger.info(f"Image file path: {image_file_path}")
 
+    # Progress: Starting
+    if ctx:
+        await ctx.report_progress(0.05, message="Starting image transformation...")
+
+    # Progress: Loading image file
+    if ctx:
+        await ctx.report_progress(0.08, message="Loading image file...")
+
     if not Path(image_file_path).exists():
         raise ValueError(f"Image file not found: {image_file_path}")
-
-    translated_prompt = await translate_to_english(prompt)
 
     try:
         source_image = PIL.Image.open(image_file_path)
         logger.info(f"Successfully loaded image from file: {image_file_path}")
     except PIL.UnidentifiedImageError:
         logger.error("Error: Could not identify image format")
-        raise ValueError(
-            "Could not identify image format. "
-            "Supported formats include PNG, JPEG, GIF, WebP."
-        ) from None
+        raise ValueError("Could not identify image format. Supported formats include PNG, JPEG, GIF, WebP.") from None
 
-    return await transform_and_save_image(
-        source_image, translated_prompt, prompt, output_dir
-    )
+    # Progress: Translating prompt
+    if ctx:
+        await ctx.report_progress(0.1, message="Translating prompt...")
+    translated_prompt = await translate_to_english(prompt)
+
+    # Progress: Preparing transformation
+    if ctx:
+        await ctx.report_progress(0.15, message="Preparing image transformation...")
+
+    # Transform with progress reporting (20% -> 80%)
+    image_bytes = await transform_image(source_image, translated_prompt, ctx)
+
+    # Build response
+    result: list[TextContent | ImageContent] = []
+
+    # Only save to disk if output_dir is explicitly provided
+    if output_dir is not None:
+        if ctx:
+            await ctx.report_progress(0.85, message="Generating filename...")
+        filename = await generate_filename_from_prompt(prompt)
+
+        if ctx:
+            await ctx.report_progress(0.95, message="Saving image to disk...")
+        saved_path = await save_image_to_disk(image_bytes, filename, output_dir)
+        result.append(TextContent(type="text", text=f"Image saved to: {saved_path}"))
+
+    # Progress: Complete
+    if ctx:
+        await ctx.report_progress(1.0, message="Image transformation complete!")
+
+    # Always include the image content
+    result.append(ImageContent(type="image", data=base64.b64encode(image_bytes).decode("utf-8"), mimeType="image/png"))
+
+    return result
 
 
 def main() -> None:
